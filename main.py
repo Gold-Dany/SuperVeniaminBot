@@ -5,6 +5,7 @@ import difflib
 import asyncio
 import requests
 import logging
+from PIL import Image, ImageOps
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ConversationHandler
 from sqlalchemy import create_engine, Column, Integer, String
@@ -30,7 +31,7 @@ session = Session()
 
 
 # Определяем модель пользователя
-class User(Base):
+class User(Base):  # База данных для профилей
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True)
     name = Column(String)
@@ -47,6 +48,13 @@ class User(Base):
     friday = Column(String)
     saturday = Column(String)
     sunday = Column(String)
+
+
+class Game_history(Base):  # База данных для отображения истории игры
+    __tablename__ = 'users_game_history'
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    note = Column(Integer)
 
 
 # Создаем таблицу, если она еще не существует
@@ -121,13 +129,14 @@ def find_closest_country_name(name):
 
 
 async def outputs(update, context):
-
     user = update.message.from_user
     username = user.username
 
     if 'waiting_for_name' in context.user_data and context.user_data['waiting_for_name']:
         try:
             del context.user_data['waiting_for_name']
+
+            await update.message.reply_text("Одну секунду...")
 
             task = asyncio.ensure_future(get_info(update.message.text, username))
             while not task.done():
@@ -144,6 +153,80 @@ async def outputs(update, context):
             await update.message.reply_text(f'Ошибка: {e}.\n\nПоянение: Проверьте существует ли ваше имя,'
                                             f' не занято ли оно или лимит запросов иссяк')
 
+    elif 'waiting_for_information' in context.user_data and context.user_data['waiting_for_information']:
+        try:
+            del context.user_data['waiting_for_information']
+
+            information = update.message.text.split()
+            max_score = int(information[0])
+            min_score = int(information[1])
+            num_tasks = int(information[2])
+            user_expectation = int(information[3])
+            preference = str(information[4])
+            hour = int(information[5])
+
+            # Расчет ожидаемого балла на основе полученных данных
+            expectation = (max_score + min_score) / 2
+
+            # Изменение ожидаемого балла в зависимости от количества заданий
+            if num_tasks > 0:
+                expectation += (expectation / num_tasks)
+
+            if user_expectation > max_score * 0.9:
+                expectation *= 1.3
+            elif user_expectation > max_score * 0.75:
+                expectation *= 1.2
+            elif user_expectation > max_score * 0.5:
+                expectation *= 1.1
+            else:
+                expectation *= 0.7
+
+            # Изменение ожидаемого балла в зависимости от времени написания
+            if 8 <= hour < 12:  # Утро
+                if preference == 'утро':
+                    expectation *= 1.2
+                elif preference == 'день':
+                    expectation *= 1.1
+                elif preference == 'вечер':
+                    expectation *= 0.8
+
+            elif 12 <= hour < 18:  # День
+                if preference == 'утро':
+                    expectation *= 1.1
+                elif preference == 'день':
+                    expectation *= 1.2
+                elif preference == 'вечер':
+                    expectation *= 0.8
+
+            elif 18 <= hour <= 23:  # Вечер
+                if preference == 'утро':
+                    expectation *= 0.8
+                elif preference == 'день':
+                    expectation *= 1.1
+                elif preference == 'вечер':
+                    expectation *= 1.2
+
+            else:  # Самое плохое время
+                expectation *= 0.7
+
+            if expectation > max_score:
+                expectation = max_score
+
+            await update.message.reply_text(f'Вы: {user_expectation} VS  Бот: {round(expectation, 1)}')
+
+            temporary_user = update.message.from_user
+            temporary_username = temporary_user.username
+
+            new_note = Game_history(name=temporary_username, note=f'Вы: '
+                                                                  f'{max_score} {min_score} {num_tasks} {user_expectation} '
+                                                                  f'{preference} {hour} VS  Бот: {round(expectation, 1)}')
+
+            session.add(new_note)
+            session.commit()
+
+        except:
+            await update.message.reply_text(f'Ошибка: Неверный ввод данных')
+
     elif '/searchcountry' in update.message.text:
         task = asyncio.ensure_future(country_universities(update.message.text.replace('/searchcountry ', '')))
         while not task.done():
@@ -159,6 +242,156 @@ async def outputs(update, context):
             await asyncio.sleep(1)
         result = await task
         await update.message.reply_text(result)
+
+    else:
+        messages = [
+            "Когда ты понимаешь, что не понимаешь...",
+            "Пытаюсь понять, что я не понимаю, но не понимаю, что не понимаю!",
+            "В мире полно загадок, но самая большая загадка - мое непонимание.",
+            "Когда тебе говорят что-то не понятное, а ты делаешь вид, что понял, но на самом деле не понимаешь ни "
+            "черта.",
+            "Загадки, загадки, а я все равно не понимаю...",
+            "Понимание - это такая роскошь, которой мне по-прежнему не понять.",
+            "Чем дальше в лес, тем больше непонимания.",
+            "В мире много вопросов, но я не понимаю даже ответов.",
+            "Когда кажется, что все понимают, а ты даже не понимаешь что они понимают...",
+            "Не могу понять, почему я не понимаю?",
+            "Понимание - это когда ты понимаешь, что не понимаешь, но все равно не понимаешь.",
+            "В мире много тайн, а я просто не понимаю их.",
+            "Почему так сложно понять, что не понимаешь?",
+            "Запутался в собственном непонимании...",
+            "Понимаю, что не понимаю, но все равно не понимаю.",
+            "Жизнь - это книга загадок, а я не могу расшифровать ни одной страницы.",
+            "Чем больше я учусь, тем больше непонимания в мире.",
+            "Я не понимаю, почему я не понимаю?",
+            "Непонимание - это когда ты слышишь слова, но не понимаешь их смысла.",
+            "Понимание - это не про меня...",
+            "Непонимание - это моя вторая половина.",
+            "Когда ты уже потерялся в собственном непонимании и не можешь найти выход.",
+            "Я не понимаю, почему я не понимаю?",
+            "Непонимание - это мое второе имя.",
+            "Чем больше я узнаю, тем больше непонимания в мире.",
+            "Я вечный студент непонимания.",
+            "Когда все говорят на одном языке, а ты остаешься на другом...",
+            "Понимать или не понимать, вот в чем вопрос.",
+            "Мир загадок, а я просто не могу их разгадать.",
+            "Может быть, я не так понял, но я даже не понимаю своего непонимания.",
+            "Понимание - это чужая планета для меня.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты пытаешься понять, но у тебя ничего не получается...",
+            "Я не понимаю, почему понимание не приходит ко мне.",
+            "Не понимать - это новое понимание.",
+            "Когда все видят, а я не понимаю.",
+            "Не понимаешь - не горюй, это не твой стиль.",
+            "Непонимание - это мое хобби.",
+            "Плыву по течению непонимания...",
+            "Подари мне понимание, а я верну тебе непонимание.",
+            "Когда ты погружаешься в мир непонимания и туда заблудился...",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Новый день, новое непонимание.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания.",
+            "Не понимать - это быть как все.",
+            "Может быть, я не так понимаю, но я даже не понимаю, что не понимаю.",
+            "Понимание - это как сказка, которую мне не рассказывали.",
+            "В мире много людей, которые понимают, но я не к ним отношусь.",
+            "Понимание - это как чужой ноутбук, на котором мне не разобраться.",
+            "Когда ты думаешь, что понимаешь, но на самом деле вообще не понимаешь.",
+            "Непонимание - это когда все слова звучат как ноты, а ты не можешь собрать из них мелодию.",
+            "Понимание - это как оазис в пустыне, который мне никогда не увидеть.",
+            "Загадки, загадки, а я все равно не могу их решить.",
+            "Когда ты сталкиваешься с непониманием, а оно как дымка прячется от тебя.",
+            "Я заблудился в своем собственном непонимании.",
+            "Понимание - это как запретный плод, который мне не угодить.",
+            "В мире много вопросов, но ноль ответов на моем языке.",
+            "Я вечный искатель понимания."]
+
+        await update.message.reply_text(random.choice(messages))
 
 
 async def get_university_info(university_name):
@@ -276,7 +509,9 @@ async def start(update, context):
 
     user = update.effective_user
     await update.message.reply_html(
-        rf"Привет {user.mention_html()}! Я Вениамин. Если у вас еще нет профиля, создайте!.",
+        f"Здравствуйте, уважаемый {user.mention_html()}! Меня зовут Вениамин, и я рад приветствовать вас."
+        f" Если у вас еще не возникла необходимость в создании профиля, пожалуйста,"
+        f" примите во внимание возможность создания его для более удобного и эффективного взаимодействия.",
         reply_markup=markup
     )
 
@@ -289,15 +524,20 @@ async def profile(update, context):
 
 
 async def get_help(update, context):
-    await update.message.reply_text(
-        '/searchcountry <страна> - Поиск университетов по стране'
-        '\n/searchname <название института> - Поиск информации о университете'
-
+    html_document = (
+        'Для общения с ботом используются команды:'
+        '\n\n\n<i>/searchcountry [страна] - Поиск университетов по стране</i> &#127758'
+        '\n\n<i>/searchname [название института] - Поиск информации о университете</i> &#127963'
+        '\n\nОстальные команды находятся в <b>≡ Меню</b>'
+        '\n\nДля создания профиля введите /start и нажмите кнопку <b>Профиль</b> &#129421'
     )
+
+    await update.message.reply_text(html_document, parse_mode='HTML')
 
 
 def delete_user(existing_user):
     session.query(User).filter(User.user_name == existing_user).delete()
+    session.query(Game_history).filter(Game_history.name == existing_user).delete()
     session.commit()
 
 
@@ -384,14 +624,35 @@ def translit_russian_to_english(text):
 
 
 async def handle_photo(update, context):
-    new_file = await update.message.effective_attachment[-1].get_file()
-    file = await new_file.download_to_drive()
+    try:
+        new_file = await update.message.effective_attachment[-1].get_file()
+        file = await new_file.download_to_drive()
 
-    await update.message.reply_html(
-        rf"Я успешно получил данное фото:",
-    )
+        # Открыть изображение PIL
+        image = Image.open(file)
 
-    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=file)
+        # 512x512
+        resized_image = image.resize((512, 512))
+
+        # Рамка
+        border_size = 10  # Размер рамки
+
+        bordered_image = ImageOps.expand(resized_image, border=border_size, fill='white')
+
+        # Стикер
+        sticker_file = "bordered_image_sticker.webp"
+        bordered_image.save(sticker_file, "WEBP")
+
+        await update.message.reply_html(
+            rf"Я успешно получил данное фото и преобразовал в стикер:",
+        )
+
+        await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=open(sticker_file, 'rb'))
+
+    except:
+        await update.message.reply_html(
+            rf"Ошибка: Некорректное фото",
+        )
 
 
 async def get_plane(update, context):
@@ -404,7 +665,6 @@ async def get_plane(update, context):
         return None
 
     if existing_user:
-
         get_user = session.query(User).filter(User.user_name == username).first()
 
         Monday = '\n'.join(str(get_user.monday).strip().split(','))
@@ -438,7 +698,7 @@ async def make_plane(update, context):
     if existing_user:
 
         await update.message.reply_text(
-            f"Введите расписание на Понедельник (через запятую без пробелов)"
+            f"Введите расписание на Понедельник (через запятую без пробелов). /stop - остановиться."
         )
 
         return 1
@@ -620,17 +880,61 @@ async def stop(update, context):
     return ConversationHandler.END
 
 
+async def Expectation_vs_Reality(update, context):
+    user = update.message.from_user
+    username = user.username
+
+    try:
+        existing_user = session.query(User).filter(User.user_name == username).first()
+    except:
+        return None
+
+    if existing_user:
+        html_document = ('<b>Добро пожаловать в игру EXPECTATION vs REALITY! &#128579;</b>\n\n'
+                         'Введите через пробел:'
+                         '\n- <i>Максимальный балл</i>'
+                         '\n- <i>Минимальный балл</i>'
+                         '\n- <i>Количество заданий</i>'
+                         '\n- <i>Ожидаемый результат</i>'
+                         '\n- <i>В какое время суток вы соображаете лучше (утро, день, вечер)</i>'
+                         '\n- <i>Время написания (час по типу: 15, 16, 9)</i>')
+
+        await update.message.reply_text(html_document, parse_mode='HTML')
+
+        context.user_data['waiting_for_information'] = True
+
+    else:
+        await update.message.reply_text('Для начала создайте профиль /start')
+
+
+async def check_game_history(update, context):
+    try:
+        history = []
+        user = update.message.from_user
+        username = user.username
+        notes = session.query(Game_history).filter(Game_history.name == username).all()
+
+        for idx, note in enumerate(notes, start=1):
+            history.append(f'{idx}. {note.note}')
+
+        await update.message.reply_text('\n\n'.join(history))
+    except:
+        await update.message.reply_text('Нет истории')
+
+
 def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     text_handler = MessageHandler(filters.TEXT, outputs)
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("get_plane", get_plane))
-    application.add_handler(CommandHandler("today_plane", today_plane))
+    application.add_handler(CommandHandler("get_schedule", get_plane))
+    application.add_handler(CommandHandler("today_schedule", today_plane))
+    application.add_handler(CommandHandler("Expectation_vs_Reality", Expectation_vs_Reality))
+    application.add_handler(CommandHandler("check_game_history", check_game_history))
 
     conv_handler = ConversationHandler(
         # Точка входа в диалог.
-        entry_points=[CommandHandler('make_plane', make_plane)],
+        entry_points=[CommandHandler('make_schedule', make_plane)],
 
         # Состояние внутри диалога.
         # Вариант с двумя обработчиками, фильтрующими текстовые сообщения.
