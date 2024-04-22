@@ -5,6 +5,8 @@ import difflib
 import asyncio
 import requests
 import logging
+import os
+import re
 from PIL import Image, ImageOps
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ConversationHandler
@@ -635,24 +637,47 @@ async def handle_photo(update, context):
         resized_image = image.resize((512, 512))
 
         # Рамка
-        border_size = 10  # Размер рамки
+        caption = update.message.caption
+        border_info_match = re.search(r'(\d+) (\w+)', caption)  # Ищем число и цвет в описании
+        if border_info_match:
+            border_size = int(border_info_match.group(1))
+            border_color = border_info_match.group(2)
+        else:
+            border_size = 10  # По умолчанию
+            border_color = 'white'  # По умолчанию
 
-        bordered_image = ImageOps.expand(resized_image, border=border_size, fill='white')
+        bordered_image = ImageOps.expand(resized_image, border=border_size, fill=border_color)
+        bordered_image1 = ImageOps.expand(resized_image, border=border_size, fill=border_color)
 
         # Стикер
         sticker_file = "bordered_image_sticker.webp"
         bordered_image.save(sticker_file, "WEBP")
+        sticker_file1 = "bordered_image1_sticker1.png"
+        bordered_image1.save(sticker_file1, "PNG")
 
         await update.message.reply_html(
-            rf"Я успешно получил данное фото и преобразовал в стикер:",
+            "Я успешно получил данное фото и преобразовал в стикер. Если вы хотите получить другой стикер, введите "
+            "через пробел(ширина рамки(10...), цвет рамки(white...))"
         )
 
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=open(sticker_file, 'rb'))
 
+        await update.message.reply_html(
+            "Файл PNG. Вы можете создать набор с этим стикером, загрузив его в бота по ссылке "
+            "https://t.me/StickerReceiverBot"
+        )
+
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=open(sticker_file1, 'rb'))
+
+        os.remove(file)
+
     except:
         await update.message.reply_html(
-            rf"Ошибка: Некорректное фото",
+            "Ошибка: Некорректное фото или описание. Если вы хотите получить стикер, введите "
+            "через пробел(ширина рамки(10...), цвет рамки(white...))",
         )
+
+        os.remove(file)
 
 
 async def get_plane(update, context):
