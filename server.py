@@ -536,8 +536,7 @@ async def get_help(update, context):
         '<i>\n - &#128208 Ширина рамки</i>'
         '<i>\n - &#128150 Цвет рамки</i>'
         '<i>\n - &#127912 Цвет текста на стикере</i>'
-        '<i>\n - &#128221 Текст (до ± 36 символов, отображающихся корректно на стикере.'
-        ' Чтобы оставить поле для текста пустым, введите <b>None</b>)</i>'
+        '<i>\n - &#128221 Текст (до ± 36 символов, отображающихся корректно на стикере)</i>'
     )
 
     await update.message.reply_text(html_document, parse_mode='HTML')
@@ -645,21 +644,35 @@ async def handle_photo(update, context):
         # Рамка
         # Извлечь размер рамки, цвет рамки и текст из описания под фото
         caption = update.message.caption
-        info_match = re.search(r'(\d+) (\w+) (\w+) (.+)', caption)
-
-        if info_match:
+        try:
+            info_match = re.search(r'(\d+) (\w+) (\w+) (.+)', caption)
             border_size = int(info_match.group(1))
             border_color = info_match.group(2)
             text_color = info_match.group(3)
             text = info_match.group(4)
-            if text == 'None':
+        except:
+            try:
+                info_match = re.search(r'(\d+) (\w+) (\w+)', caption)
+                border_size = int(info_match.group(1))
+                border_color = info_match.group(2)
+                text_color = info_match.group(3)
                 text = ''
-
-        else:
-            border_size = 10  # По умолчанию
-            border_color = 'white'  # По умолчанию
-            text_color = 'white'  # По умолчанию
-            text = ''  # По умолчанию
+            except:
+                try:
+                    info_match = re.search(r'(\d+) (\w+)', caption)
+                    border_size = int(info_match.group(1))
+                    border_color = info_match.group(2)
+                    text_color = 'white'
+                    text = ''
+                except:
+                    try:
+                        info_match = re.search(r'(\d+)', caption)
+                        border_size = int(info_match.group(1))
+                        border_color = 'white'
+                        text_color = 'white'
+                        text = ''
+                    except:
+                        await update.message.reply_html('Вы ничего не ввели!')
 
         bordered_image = ImageOps.expand(resized_image, border=border_size, fill=border_color)
         bordered_image1 = ImageOps.expand(resized_image, border=border_size, fill=border_color)
@@ -887,7 +900,7 @@ async def get_sunday(update, context):
     session.commit()
 
     await update.message.reply_text(
-        f"Все данные успешно получены. Вы можете увидеть всё расписание по команде /get_plane"
+        f"Все данные успешно получены. Вы можете увидеть всё расписание по команде /get_schedule"
     )
 
     return ConversationHandler.END
