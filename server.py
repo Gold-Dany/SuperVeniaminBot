@@ -7,7 +7,7 @@ import requests
 import logging
 import os
 import re
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw, ImageFont
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ConversationHandler
 from sqlalchemy import create_engine, Column, Integer, String
@@ -532,6 +532,12 @@ async def get_help(update, context):
         '\n\n<i>/searchname [название института] - Поиск информации о университете</i> &#127963'
         '\n\nОстальные команды находятся в <b>≡ Меню</b>'
         '\n\nДля создания профиля введите /start и нажмите кнопку <b>Профиль</b> &#129421'
+        '\n\nЧтобы создать свой <b>стикер</b> пришлите <b>фото</b> с описанием(через пробел):'
+        '<i>\n - &#128208 Ширина рамки</i>'
+        '<i>\n - &#128150 Цвет рамки</i>'
+        '<i>\n - &#127912 Цвет текста на стикере</i>'
+        '<i>\n - &#128221 Текст (до ± 36 символов, отображающихся корректно на стикере.'
+        ' Чтобы оставить поле для текста пустым, введите <b>None</b>)</i>'
     )
 
     await update.message.reply_text(html_document, parse_mode='HTML')
@@ -637,17 +643,53 @@ async def handle_photo(update, context):
         resized_image = image.resize((512, 512))
 
         # Рамка
+        # Извлечь размер рамки, цвет рамки и текст из описания под фото
         caption = update.message.caption
-        border_info_match = re.search(r'(\d+) (\w+)', caption)  # Ищем число и цвет в описании
-        if border_info_match:
-            border_size = int(border_info_match.group(1))
-            border_color = border_info_match.group(2)
+        info_match = re.search(r'(\d+) (\w+) (\w+) (.+)', caption)
+
+        if info_match:
+            border_size = int(info_match.group(1))
+            border_color = info_match.group(2)
+            text_color = info_match.group(3)
+            text = info_match.group(4)
+            if text == 'None':
+                text = ''
+
         else:
             border_size = 10  # По умолчанию
             border_color = 'white'  # По умолчанию
+            text_color = 'white'  # По умолчанию
+            text = ''  # По умолчанию
 
         bordered_image = ImageOps.expand(resized_image, border=border_size, fill=border_color)
         bordered_image1 = ImageOps.expand(resized_image, border=border_size, fill=border_color)
+
+        texts = []
+
+        if len(text) > 17:
+            texts.append(text[:17])
+            texts.append(text[17:])
+
+            draw = ImageDraw.Draw(bordered_image)
+            font = ImageFont.truetype("arial.ttf", 50)
+            text_width, text_height = draw.textsize(text, font)
+            draw.text((15, (512 - text_height) // 2), texts[0], fill=text_color, font=font)
+            draw.text((15, (512 - text_height) // 1.6), texts[1], fill=text_color, font=font)
+
+            draw = ImageDraw.Draw(bordered_image1)
+            draw.text((15, (512 - text_height) // 2), texts[0], fill=text_color, font=font)
+            draw.text((15, (512 - text_height) // 1.6), texts[1], fill=text_color, font=font)
+
+        else:
+
+            # Добавить текст на изображение
+            draw = ImageDraw.Draw(bordered_image)
+            font = ImageFont.truetype("arial.ttf", 50)
+            text_width, text_height = draw.textsize(text, font)
+            draw.text(((512 - text_width) // 2, (512 - text_height) // 2), text, fill=text_color, font=font)
+
+            draw = ImageDraw.Draw(bordered_image1)
+            draw.text(((512 - text_width) // 2, (512 - text_height) // 2), text, fill=text_color, font=font)
 
         # Стикер
         sticker_file = "bordered_image_sticker.webp"
@@ -656,16 +698,12 @@ async def handle_photo(update, context):
         bordered_image1.save(sticker_file1, "PNG")
 
         await update.message.reply_html(
-            "Я успешно получил данное фото и преобразовал в стикер. Если вы хотите получить другой стикер, введите "
-            "через пробел(ширина рамки(10...), цвет рамки(white...))"
+            "Я успешно получил данное фото и преобразовал в стикер. Вы можете создать набор с этим стикером, "
+            "загрузив следующий файл PNG в бота по ссылке "
+            "https://t.me/StickerReceiverBot"
         )
 
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=open(sticker_file, 'rb'))
-
-        await update.message.reply_html(
-            "Файл PNG. Вы можете создать набор с этим стикером, загрузив его в бота по ссылке "
-            "https://t.me/StickerReceiverBot"
-        )
 
         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=open(sticker_file1, 'rb'))
 
@@ -674,7 +712,8 @@ async def handle_photo(update, context):
     except:
         await update.message.reply_html(
             "Ошибка: Некорректное фото или описание. Если вы хотите получить стикер, введите "
-            "через пробел(ширина рамки(10...), цвет рамки(white...))",
+            "через пробел(ширина рамки(10...), цвет рамки(white...), текст для отображения на стикере("
+            "чтобы отсавить поле для текста пустым введите None))",
         )
 
         os.remove(file)
