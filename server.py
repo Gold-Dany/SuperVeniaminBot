@@ -186,7 +186,7 @@ async def outputs(update, context):
             # Изменение ожидаемого балла в зависимости от времени написания
             if 8 <= hour < 12:  # Утро
                 if preference == 'утро':
-                    expectation *= 1.2
+                    expectation *= 1.3
                 elif preference == 'день':
                     expectation *= 1.1
                 elif preference == 'вечер':
@@ -196,7 +196,7 @@ async def outputs(update, context):
                 if preference == 'утро':
                     expectation *= 1.1
                 elif preference == 'день':
-                    expectation *= 1.2
+                    expectation *= 1.3
                 elif preference == 'вечер':
                     expectation *= 0.8
 
@@ -206,7 +206,7 @@ async def outputs(update, context):
                 elif preference == 'день':
                     expectation *= 1.1
                 elif preference == 'вечер':
-                    expectation *= 1.2
+                    expectation *= 1.3
 
             else:  # Самое плохое время
                 expectation *= 0.7
@@ -220,8 +220,10 @@ async def outputs(update, context):
             temporary_username = temporary_user.username
 
             new_note = Game_history(name=temporary_username, note=f'Вы: '
-                                                                  f'{max_score} {min_score} {num_tasks} {user_expectation} '
-                                                                  f'{preference} {hour} VS  Бот: {round(expectation, 1)}')
+                                                                  f'{max_score} {min_score} {num_tasks} '
+                                                                  f'{user_expectation} '
+                                                                  f'{preference} {hour}'
+                                                                  f' VS  Бот: {round(expectation, 1)}')
 
             session.add(new_note)
             session.commit()
@@ -532,7 +534,7 @@ async def get_help(update, context):
         '\n\n<i>/searchname [название института] - Поиск информации о университете</i> &#127963'
         '\n\nОстальные команды находятся в <b>≡ Меню</b>'
         '\n\nДля создания профиля введите /start и нажмите кнопку <b>Профиль</b> &#129421'
-        '\n\nЧтобы создать свой <b>стикер</b> пришлите <b>фото</b> с описанием(через пробел):'
+        '\n\nЧтобы создать свой <b>стикер</b>, пришлите <b>фото</b> с описанием(через пробел):'
         '<i>\n - &#128208 Ширина рамки</i>'
         '<i>\n - &#128150 Цвет рамки</i>'
         '<i>\n - &#127912 Цвет текста на стикере</i>'
@@ -672,7 +674,7 @@ async def handle_photo(update, context):
                         text_color = 'white'
                         text = ''
                     except:
-                        await update.message.reply_html('Вы ничего не ввели!')
+                        await update.message.reply_html('Некорректный ввод!')
 
         bordered_image = ImageOps.expand(resized_image, border=border_size, fill=border_color)
         bordered_image1 = ImageOps.expand(resized_image, border=border_size, fill=border_color)
@@ -724,9 +726,7 @@ async def handle_photo(update, context):
 
     except:
         await update.message.reply_html(
-            "Ошибка: Некорректное фото или описание. Если вы хотите получить стикер, введите "
-            "через пробел(ширина рамки(10...), цвет рамки(white...), текст для отображения на стикере("
-            "чтобы отсавить поле для текста пустым введите None))",
+            "Ошибка: Некорректное фото или описание.",
         )
 
         os.remove(file)
